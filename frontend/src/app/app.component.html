@@ -1,0 +1,317 @@
+<main class="shell">
+  <section class="topbar">
+    <div class="brand">
+      <span class="brand-mark">EB</span>
+      <div>
+      <p class="eyebrow">Electricity Board</p>
+      <h1>Billing & Complaint Portal</h1>
+      </div>
+    </div>
+    <div class="user" *ngIf="user() as currentUser">
+      <span>{{ currentUser.role }}</span>
+      <strong>{{ currentUser.name }}</strong>
+      <button class="secondary danger-outline" (click)="logout()">Logout</button>
+    </div>
+  </section>
+
+  <section class="entry" *ngIf="!user()">
+    <div class="auth-card">
+      <div class="auth-copy">
+        <p class="eyebrow">Start here</p>
+        <h2>{{ authMode() === 'signup' ? 'Create your customer account' : 'Login to your workspace' }}</h2>
+        <p>{{ authMode() === 'signup' ? 'Register once with your consumer number, then manage bills and complaints from one place.' : 'Pick your role, use the prefilled demo login, and jump into the right dashboard.' }}</p>
+      </div>
+
+      <div class="role-pills">
+        <button [class.active]="selectedRole() === 'CUSTOMER'" (click)="chooseRole('CUSTOMER')">Customer</button>
+        <button [class.active]="selectedRole() === 'ADMIN'" (click)="chooseRole('ADMIN')">Admin</button>
+        <button [class.active]="selectedRole() === 'SME'" (click)="chooseRole('SME')">SME</button>
+      </div>
+
+      <div *ngIf="authMode() === 'login'; else signupForm">
+        <label>Email <input [(ngModel)]="loginForm.email"></label>
+        <label>Password <input type="password" [(ngModel)]="loginForm.password"></label>
+        <button class="primary full" (click)="login()" [disabled]="loading()">Login</button>
+
+        <div class="auth-switch">
+          <span *ngIf="selectedRole() !== 'CUSTOMER'">Demo credentials are filled for this role.</span>
+          <span *ngIf="selectedRole() === 'CUSTOMER'">No account?</span>
+          <button class="link-button" *ngIf="selectedRole() === 'CUSTOMER'" (click)="showSignup()">Sign up</button>
+        </div>
+      </div>
+
+      <ng-template #signupForm>
+        <label>Name <input [(ngModel)]="registerForm.name"></label>
+        <label>Email <input [(ngModel)]="registerForm.email"></label>
+        <label>Password <input type="password" [(ngModel)]="registerForm.password"></label>
+        <label>Consumer Number <input [(ngModel)]="registerForm.consumerNumber"></label>
+        <button class="primary full" (click)="register()" [disabled]="loading()">Create account</button>
+
+        <div class="auth-switch">
+          <span>Already have an account?</span>
+          <button class="link-button" (click)="showLogin()">Login</button>
+        </div>
+      </ng-template>
+    </div>
+  </section>
+
+  <ng-container *ngIf="user() as currentUser">
+    <nav class="tabs">
+      <button *ngFor="let tab of roleTabs()" [class.active]="activeTab() === tab" (click)="activeTab.set(tab); loadData()">
+        {{ tab | titlecase }}
+      </button>
+    </nav>
+
+    <section *ngIf="activeTab() === 'dashboard'" class="grid">
+      <div class="metric" *ngIf="currentUser.role === 'CUSTOMER'">
+        <span>Outstanding</span>
+        <strong>{{ summary.outstandingAmount | currency:'INR' }}</strong>
+      </div>
+      <div class="metric" *ngIf="currentUser.role === 'CUSTOMER'">
+        <span>Total Bills</span>
+        <strong>{{ summary.totalBills }}</strong>
+      </div>
+      <div class="metric">
+        <span>Open Complaints</span>
+        <strong>{{ (currentUser.role === 'ADMIN' ? adminComplaints : currentUser.role === 'SME' ? smeComplaints : complaints).length }}</strong>
+      </div>
+    </section>
+
+    <section *ngIf="currentUser.role === 'CUSTOMER' && activeTab() === 'bills'" class="panel">
+      <div class="section-head">
+        <h2>View Bills</h2>
+        <select [(ngModel)]="billFilter" (change)="loadCustomerData()">
+          <option value="">All</option>
+          <option>UNPAID</option>
+          <option>PAID</option>
+        </select>
+      </div>
+      <table>
+        <thead><tr><th>Month</th><th>Units</th><th>Amount</th><th>Due</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr *ngFor="let bill of bills">
+            <td>{{ bill.month }}</td>
+            <td>{{ bill.units }}</td>
+            <td>{{ bill.amount | currency:'INR' }}</td>
+            <td>{{ bill.dueDate | date }}</td>
+            <td><span class="badge">{{ bill.status }}</span></td>
+            <td class="actions">
+              <button class="secondary" (click)="downloadBill(bill)">Download</button>
+              <button class="primary" *ngIf="bill.status === 'UNPAID'" (click)="payBill(bill)">Pay</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section *ngIf="currentUser.role === 'CUSTOMER' && activeTab() === 'payments'" class="panel">
+      <h2>Payment Details</h2>
+      <table>
+        <thead><tr><th>Payment</th><th>Bill</th><th>Amount</th><th>Card</th><th>Paid At</th><th></th></tr></thead>
+        <tbody>
+          <tr *ngFor="let payment of payments">
+            <td>#{{ payment.id }}</td>
+            <td>#{{ payment.billId }}</td>
+            <td>{{ payment.amount | currency:'INR' }}</td>
+            <td>**** {{ payment.cardLast4 }}</td>
+            <td>{{ payment.paidAt | date:'medium' }}</td>
+            <td><button class="secondary" (click)="downloadPayment(payment)">Download</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section *ngIf="currentUser.role === 'CUSTOMER' && activeTab() === 'complaints'" class="two-col">
+      <div class="panel">
+        <h2>Register Complaint</h2>
+        <label>Title <input [(ngModel)]="complaintForm.title"></label>
+        <label>Department
+          <select [(ngModel)]="complaintForm.department">
+            <option>Operations</option>
+            <option>Billing</option>
+            <option>Metering</option>
+          </select>
+        </label>
+        <label>Description <textarea [(ngModel)]="complaintForm.description"></textarea></label>
+        <button class="primary" (click)="addComplaint()">Submit</button>
+      </div>
+      <div class="panel">
+        <div class="section-head">
+          <h2>Complaint Status</h2>
+          <select [(ngModel)]="complaintFilter" (change)="loadCustomerData()">
+            <option value="">All</option>
+            <option>OPEN</option>
+            <option>IN_PROGRESS</option>
+            <option>RESOLVED</option>
+          </select>
+        </div>
+        <article class="list-item" *ngFor="let complaint of complaints">
+          <strong>{{ complaint.title }}</strong>
+          <span>{{ complaint.department }} · {{ complaint.status }}</span>
+          <p>{{ complaint.description }}</p>
+          <small>{{ complaint.remarks || 'No remarks yet' }}</small>
+        </article>
+      </div>
+    </section>
+
+    <section *ngIf="currentUser.role === 'ADMIN' && activeTab() === 'customers'" class="two-col wide">
+      <div class="panel">
+        <h2>Add Customer</h2>
+        <label>Name <input [(ngModel)]="customerForm.name"></label>
+        <label>Email <input [(ngModel)]="customerForm.email"></label>
+        <label>Password <input [(ngModel)]="customerForm.password"></label>
+        <label>Consumer Number <input [(ngModel)]="customerForm.consumerNumber"></label>
+        <button class="primary" (click)="addCustomer()">Add</button>
+      </div>
+      <div class="panel">
+        <div class="section-head">
+          <h2>Customers</h2>
+          <input placeholder="Search" [(ngModel)]="adminSearch" (input)="loadCustomers()">
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Consumer Nos.</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr *ngFor="let customer of customers">
+              <td>{{ customer.name }}<br><small>{{ customer.email }}</small></td>
+              <td>{{ customer.consumerNumbers.join(', ') }}</td>
+              <td>{{ customer.connectionStatus }}</td>
+              <td class="actions">
+                <button class="secondary" (click)="editCustomer(customer)">Edit</button>
+                <button class="danger" (click)="updateConnection(customer, customer.connectionStatus === 'ACTIVE' ? 'DISCONNECTED' : 'ACTIVE')">
+                  {{ customer.connectionStatus === 'ACTIVE' ? 'Disconnect' : 'Reconnect' }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="inline-form">
+          <input placeholder="Name" [(ngModel)]="updateCustomerForm.name">
+          <input placeholder="Email" [(ngModel)]="updateCustomerForm.email">
+          <button class="primary" (click)="updateCustomer()" [disabled]="!updateCustomerForm.id">Update</button>
+        </div>
+        <div class="inline-form">
+          <input type="number" placeholder="Customer ID" [(ngModel)]="consumerNumberForm.customerId">
+          <input placeholder="New consumer number" [(ngModel)]="consumerNumberForm.consumerNumber">
+          <button class="primary" (click)="addConsumerNumber()">Add Number</button>
+        </div>
+      </div>
+    </section>
+
+    <section *ngIf="currentUser.role === 'ADMIN' && activeTab() === 'bills'" class="two-col">
+      <div class="panel">
+        <h2>Add Bill</h2>
+        <label>Customer ID <input type="number" [(ngModel)]="billForm.customerId"></label>
+        <label>Month <input [(ngModel)]="billForm.month"></label>
+        <label>Units <input type="number" [(ngModel)]="billForm.units"></label>
+        <label>Amount <input type="number" [(ngModel)]="billForm.amount"></label>
+        <label>Due Date <input type="date" [(ngModel)]="billForm.dueDate"></label>
+        <button class="primary" (click)="addBill()">Add Bill</button>
+      </div>
+      <div class="panel">
+        <h2>Bulk Upload Bills</h2>
+        <label>Customer IDs <input placeholder="1,2,3" [(ngModel)]="bulkBillForm.customerIds"></label>
+        <label>Month <input [(ngModel)]="bulkBillForm.month"></label>
+        <label>Units <input type="number" [(ngModel)]="bulkBillForm.units"></label>
+        <label>Amount <input type="number" [(ngModel)]="bulkBillForm.amount"></label>
+        <label>Due Date <input type="date" [(ngModel)]="bulkBillForm.dueDate"></label>
+        <button class="primary" (click)="bulkUploadBills()">Upload</button>
+      </div>
+    </section>
+
+    <section *ngIf="currentUser.role === 'ADMIN' && activeTab() === 'complaints'" class="panel">
+      <div class="section-head">
+        <h2>View Complaints</h2>
+        <select [(ngModel)]="adminComplaintStatus" (change)="loadAdminComplaints()">
+          <option value="">All Status</option>
+          <option>OPEN</option>
+          <option>IN_PROGRESS</option>
+          <option>RESOLVED</option>
+        </select>
+        <select [(ngModel)]="adminComplaintDepartment" (change)="loadAdminComplaints()">
+          <option value="">All Departments</option>
+          <option>Operations</option>
+          <option>Billing</option>
+          <option>Metering</option>
+        </select>
+      </div>
+      <ng-container *ngTemplateOutlet="complaintTable; context: { items: adminComplaints, source: 'ADMIN' }"></ng-container>
+    </section>
+
+    <section *ngIf="currentUser.role === 'SME' && activeTab() === 'complaints'" class="panel">
+      <div class="section-head">
+        <h2>List Complaints</h2>
+        <select [(ngModel)]="smeStatus" (change)="loadSmeComplaints()">
+          <option value="">All Status</option>
+          <option>OPEN</option>
+          <option>IN_PROGRESS</option>
+          <option>RESOLVED</option>
+        </select>
+        <input placeholder="Consumer number" [(ngModel)]="smeConsumerNumber" (input)="loadSmeComplaints()">
+      </div>
+      <ng-container *ngTemplateOutlet="complaintTable; context: { items: smeComplaints, source: 'SME' }"></ng-container>
+    </section>
+  </ng-container>
+
+  <ng-template #complaintTable let-items="items" let-source="source">
+    <table>
+      <thead><tr><th>ID</th><th>Complaint</th><th>Department</th><th>Status</th><th>Remarks</th><th></th></tr></thead>
+      <tbody>
+        <tr *ngFor="let complaint of items">
+          <td>#{{ complaint.id }}</td>
+          <td><strong>{{ complaint.title }}</strong><br><small>{{ complaint.description }}</small></td>
+          <td>{{ complaint.department }}</td>
+          <td>{{ complaint.status }}</td>
+          <td>{{ complaint.remarks || '-' }}</td>
+          <td><button class="secondary" (click)="prepareStatus(complaint, source)">Act</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </ng-template>
+
+  <section class="toast-stack" aria-live="polite" aria-atomic="true">
+    <button class="toast" *ngFor="let toast of toasts()" [class.error]="toast.tone === 'error'" [class.success]="toast.tone === 'success'" (click)="removeToast(toast.id)">
+      <span>{{ toast.tone }}</span>
+      <strong>{{ toast.text }}</strong>
+    </button>
+  </section>
+
+  <section class="modal-backdrop" *ngIf="confirmation() as dialog">
+    <div class="confirm-card">
+      <p class="eyebrow">Confirm</p>
+      <h2>{{ dialog.title }}</h2>
+      <p>{{ dialog.message }}</p>
+      <div class="actions end">
+        <button class="secondary" (click)="cancelConfirmation()">Cancel</button>
+        <button [class.danger]="dialog.tone === 'danger'" [class.primary]="dialog.tone !== 'danger'" (click)="confirmAction()">
+          {{ dialog.actionLabel }}
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="modal-backdrop status-layer" *ngIf="selectedComplaint() as complaint">
+    <div class="confirm-card status-card">
+      <p class="eyebrow">Complaint #{{ complaint.id }}</p>
+      <h2>{{ complaint.title }}</h2>
+      <p>{{ complaint.description }}</p>
+      <div class="status-grid">
+        <span>Department <strong>{{ complaint.department }}</strong></span>
+        <span>Current status <strong>{{ complaint.status }}</strong></span>
+      </div>
+      <label>Status
+        <select [(ngModel)]="statusForm.status">
+          <option>OPEN</option>
+          <option>IN_PROGRESS</option>
+          <option>RESOLVED</option>
+        </select>
+      </label>
+      <label>Remarks
+        <textarea [(ngModel)]="statusForm.remarks"></textarea>
+      </label>
+      <div class="actions end">
+        <button class="secondary" (click)="closeStatusEditor()">Cancel</button>
+        <button class="primary" (click)="updateComplaint()">Update Status</button>
+      </div>
+    </div>
+  </section>
+</main>
