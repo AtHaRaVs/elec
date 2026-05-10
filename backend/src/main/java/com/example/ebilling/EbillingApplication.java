@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @SpringBootApplication
 public class EbillingApplication {
@@ -200,6 +201,9 @@ class ApiController {
 @Repository
 class Store {
   private final JdbcTemplate jdbc;
+  private static final Pattern CONSUMER_NUMBER = Pattern.compile("\\d{13}");
+  private static final Pattern MOBILE = Pattern.compile("\\d{10}");
+  private static final Pattern STRONG_PASSWORD = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$");
 
   private final RowMapper<Bill> billMapper = (rs, rowNum) -> new Bill(
       rs.getLong("id"),
@@ -334,6 +338,7 @@ class Store {
   }
 
   Customer addCustomer(AdminCustomerRequest request) {
+    validateCustomerRequest(request);
     if (exists("select count(*) from customers where lower(email) = lower(?)", request.email())) {
       throw new IllegalArgumentException("Customer email already exists");
     }
@@ -584,6 +589,24 @@ class Store {
 
   private UserView toUserView(Customer customer, String role) {
     return new UserView(customer.id, customer.name, customer.email, role, customer.id);
+  }
+
+  private void validateCustomerRequest(AdminCustomerRequest request) {
+    if (!CONSUMER_NUMBER.matcher(request.consumerNumber()).matches()) {
+      throw new IllegalArgumentException("Please enter a valid 13 digit consumer number");
+    }
+    if (!MOBILE.matcher(request.mobile()).matches()) {
+      throw new IllegalArgumentException("Mobile number must contain 10 digits");
+    }
+    if (request.name().trim().length() > 50 || !request.name().trim().matches("[A-Za-z ]+")) {
+      throw new IllegalArgumentException("Customer name should contain only characters and be under 50 characters");
+    }
+    if (request.address().trim().length() < 8) {
+      throw new IllegalArgumentException("Address should be at least 8 characters long");
+    }
+    if (!STRONG_PASSWORD.matcher(request.password()).matches()) {
+      throw new IllegalArgumentException("Password needs uppercase, lowercase, number, special character, and minimum 8 characters");
+    }
   }
 
   private long insert(String sql, Object... args) {

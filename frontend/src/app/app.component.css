@@ -363,6 +363,42 @@ small {
   padding-top: 14px;
 }
 
+.payment-summary,
+.pager {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+  padding: 10px;
+}
+
+.payment-summary span,
+.pager span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.payment-summary strong {
+  color: #0f766e;
+  font-size: 18px;
+  margin-right: auto;
+}
+
+.row-check {
+  min-height: auto;
+  width: 18px;
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
 .inline-form input,
 .inline-form select {
   flex: 1 1 160px;

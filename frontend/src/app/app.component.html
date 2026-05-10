@@ -100,11 +100,18 @@
           <option>PAID</option>
         </select>
       </div>
+      <div class="payment-summary" *ngIf="selectedBills().length">
+        <span>{{ selectedBills().length }} selected</span>
+        <strong>{{ selectedBillTotal() | currency:'INR' }}</strong>
+        <button class="primary" (click)="openSelectedBillsPayment()">Proceed to Pay</button>
+      </div>
       <div class="table-scroll">
       <table>
-        <thead><tr><th>Month</th><th>Units</th><th>Amount</th><th>Due</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Select</th><th>Bill</th><th>Month</th><th>Units</th><th>Amount</th><th>Due</th><th>Status</th><th></th></tr></thead>
         <tbody>
           <tr *ngFor="let bill of bills">
+            <td><input class="row-check" type="checkbox" [checked]="isBillSelected(bill)" [disabled]="bill.status !== 'UNPAID'" (change)="toggleBillSelection(bill, $any($event.target).checked)"></td>
+            <td>#{{ bill.id }}</td>
             <td>{{ bill.month }}</td>
             <td>{{ bill.units }}</td>
             <td>{{ bill.amount | currency:'INR' }}</td>
@@ -127,10 +134,10 @@
         <thead><tr><th>Payment</th><th>Bill</th><th>Amount</th><th>Card</th><th>Paid At</th><th></th></tr></thead>
         <tbody>
           <tr *ngFor="let payment of payments">
-            <td>#{{ payment.id }}</td>
+            <td>#{{ payment.id }}<br><small>{{ transactionId(payment) }}</small></td>
             <td>#{{ payment.billId }}</td>
             <td>{{ payment.amount | currency:'INR' }}</td>
-            <td>{{ paymentMode(payment) }}</td>
+            <td>{{ paymentMode(payment) }}<br><small>{{ receiptNumber(payment) }}</small></td>
             <td>{{ payment.paidAt | date:'medium' }}</td>
             <td><button class="secondary" (click)="downloadPayment(payment)">Download</button></td>
           </tr>
@@ -215,7 +222,7 @@
         <table>
           <thead><tr><th>ID</th><th>Customer Details</th><th>Consumer Nos.</th><th>Type / Section</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            <tr *ngFor="let customer of customers">
+            <tr *ngFor="let customer of pagedCustomers()">
               <td>#{{ customer.id }}</td>
               <td>
                 <strong>{{ customer.name }}</strong><br>
@@ -238,6 +245,11 @@
             </tr>
           </tbody>
         </table>
+        </div>
+        <div class="pager" *ngIf="customers.length > customerPageSize">
+          <button class="secondary" (click)="changeCustomerPage(-1)" [disabled]="customerPage === 1">Previous</button>
+          <span>Page {{ customerPage }} of {{ customerTotalPages() }}</span>
+          <button class="secondary" (click)="changeCustomerPage(1)" [disabled]="customerPage === customerTotalPages()">Next</button>
         </div>
         <div class="inline-form">
           <input type="number" placeholder="ID" [(ngModel)]="updateCustomerForm.id" readonly>
@@ -281,6 +293,35 @@
         <label>Amount <input type="number" [(ngModel)]="bulkBillForm.amount"></label>
         <label>Due Date <input type="date" [(ngModel)]="bulkBillForm.dueDate"></label>
         <button class="primary" (click)="bulkUploadBills()">Upload</button>
+      </div>
+      <div class="panel full-row">
+        <div class="section-head">
+          <h2>View Bill History</h2>
+          <input type="number" placeholder="Customer ID" [(ngModel)]="adminBillCustomerId">
+          <select [(ngModel)]="adminBillStatus">
+            <option value="">All Status</option>
+            <option>UNPAID</option>
+            <option>PAID</option>
+          </select>
+          <button class="primary" (click)="loadAdminBills()">Search</button>
+          <button class="secondary" (click)="exportAdminBills()">Export CSV</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Bill</th><th>Customer</th><th>Billing Period</th><th>Units</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let bill of adminBills">
+                <td>#{{ bill.id }}</td>
+                <td>#{{ bill.customerId }}</td>
+                <td>{{ bill.month }}</td>
+                <td>{{ bill.units }}</td>
+                <td>{{ bill.amount | currency:'INR' }}</td>
+                <td>{{ bill.dueDate | date }}</td>
+                <td><span class="badge">{{ bill.status }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -348,15 +389,15 @@
       <div class="gateway-head">
         <div>
           <p class="eyebrow">Dummy Payment Gateway</p>
-          <h2>Pay {{ gateway.bill.amount | currency:'INR' }}</h2>
+          <h2>Pay {{ selectedBillTotal() || gateway.bills[0].amount | currency:'INR' }}</h2>
         </div>
         <button class="secondary icon-button" (click)="closePaymentGateway()">X</button>
       </div>
 
       <div class="gateway-summary">
-        <span>Bill <strong>#{{ gateway.bill.id }}</strong></span>
-        <span>Month <strong>{{ gateway.bill.month }}</strong></span>
-        <span>Due <strong>{{ gateway.bill.dueDate | date }}</strong></span>
+        <span>Bills <strong>{{ gateway.bills.length }}</strong></span>
+        <span>First bill <strong>#{{ gateway.bills[0].id }}</strong></span>
+        <span>Due <strong>{{ gateway.bills[0].dueDate | date }}</strong></span>
       </div>
 
       <div class="payment-methods">
