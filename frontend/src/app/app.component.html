@@ -45,6 +45,20 @@
         <label>Email <input [(ngModel)]="registerForm.email"></label>
         <label>Password <input type="password" [(ngModel)]="registerForm.password"></label>
         <label>Consumer Number <input [(ngModel)]="registerForm.consumerNumber"></label>
+        <label>Address <textarea [(ngModel)]="registerForm.address"></textarea></label>
+        <label>Mobile <input [(ngModel)]="registerForm.mobile"></label>
+        <label>Customer Type
+          <select [(ngModel)]="registerForm.customerType">
+            <option>Residential</option>
+            <option>Commercial</option>
+          </select>
+        </label>
+        <label>Electrical Section
+          <select [(ngModel)]="registerForm.electricalSection">
+            <option>Office</option>
+            <option>Region</option>
+          </select>
+        </label>
         <button class="primary full" (click)="register()" [disabled]="loading()">Create account</button>
 
         <div class="auth-switch">
@@ -86,6 +100,7 @@
           <option>PAID</option>
         </select>
       </div>
+      <div class="table-scroll">
       <table>
         <thead><tr><th>Month</th><th>Units</th><th>Amount</th><th>Due</th><th>Status</th><th></th></tr></thead>
         <tbody>
@@ -102,10 +117,12 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </section>
 
     <section *ngIf="currentUser.role === 'CUSTOMER' && activeTab() === 'payments'" class="panel">
       <h2>Payment Details</h2>
+      <div class="table-scroll">
       <table>
         <thead><tr><th>Payment</th><th>Bill</th><th>Amount</th><th>Card</th><th>Paid At</th><th></th></tr></thead>
         <tbody>
@@ -113,12 +130,13 @@
             <td>#{{ payment.id }}</td>
             <td>#{{ payment.billId }}</td>
             <td>{{ payment.amount | currency:'INR' }}</td>
-            <td>**** {{ payment.cardLast4 }}</td>
+            <td>{{ paymentMode(payment) }}</td>
             <td>{{ payment.paidAt | date:'medium' }}</td>
             <td><button class="secondary" (click)="downloadPayment(payment)">Download</button></td>
           </tr>
         </tbody>
       </table>
+      </div>
     </section>
 
     <section *ngIf="currentUser.role === 'CUSTOMER' && activeTab() === 'complaints'" class="two-col">
@@ -161,32 +179,80 @@
         <label>Email <input [(ngModel)]="customerForm.email"></label>
         <label>Password <input [(ngModel)]="customerForm.password"></label>
         <label>Consumer Number <input [(ngModel)]="customerForm.consumerNumber"></label>
+        <label>Address <textarea [(ngModel)]="customerForm.address"></textarea></label>
+        <label>Mobile <input [(ngModel)]="customerForm.mobile"></label>
+        <label>Customer Type
+          <select [(ngModel)]="customerForm.customerType">
+            <option>Residential</option>
+            <option>Commercial</option>
+          </select>
+        </label>
+        <label>Electrical Section
+          <select [(ngModel)]="customerForm.electricalSection">
+            <option>Office</option>
+            <option>Region</option>
+          </select>
+        </label>
         <button class="primary" (click)="addCustomer()">Add</button>
       </div>
       <div class="panel">
         <div class="section-head">
           <h2>Customers</h2>
           <input placeholder="Search" [(ngModel)]="adminSearch" (input)="loadCustomers()">
+          <select [(ngModel)]="adminSectionFilter" (change)="loadCustomers()">
+            <option value="">All Sections</option>
+            <option>Office</option>
+            <option>Region</option>
+          </select>
+          <select [(ngModel)]="adminTypeFilter" (change)="loadCustomers()">
+            <option value="">All Types</option>
+            <option>Residential</option>
+            <option>Commercial</option>
+          </select>
         </div>
+        <p class="muted">Showing {{ customers.length }} customer records with all linked consumer numbers.</p>
+        <div class="table-scroll customers-table">
         <table>
-          <thead><tr><th>Name</th><th>Consumer Nos.</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Customer Details</th><th>Consumer Nos.</th><th>Type / Section</th><th>Status</th><th></th></tr></thead>
           <tbody>
             <tr *ngFor="let customer of customers">
-              <td>{{ customer.name }}<br><small>{{ customer.email }}</small></td>
-              <td>{{ customer.consumerNumbers.join(', ') }}</td>
-              <td>{{ customer.connectionStatus }}</td>
+              <td>#{{ customer.id }}</td>
+              <td>
+                <strong>{{ customer.name }}</strong><br>
+                <small>{{ customer.email }}</small><br>
+                <small>{{ customer.mobile }}</small><br>
+                <small>{{ customer.address }}</small>
+              </td>
+              <td>
+                <span class="consumer-chip" *ngFor="let consumerNo of customer.consumerNumbers">{{ consumerNo }}</span>
+              </td>
+              <td>{{ customer.customerType }}<br><small>{{ customer.electricalSection }}</small></td>
+              <td><span class="badge" [class.good]="customer.connectionStatus === 'ACTIVE'" [class.warn]="customer.connectionStatus !== 'ACTIVE'">{{ customer.connectionStatus }}</span></td>
               <td class="actions">
                 <button class="secondary" (click)="editCustomer(customer)">Edit</button>
                 <button class="danger" (click)="updateConnection(customer, customer.connectionStatus === 'ACTIVE' ? 'DISCONNECTED' : 'ACTIVE')">
                   {{ customer.connectionStatus === 'ACTIVE' ? 'Disconnect' : 'Reconnect' }}
                 </button>
+                <button class="danger-outline" (click)="deleteCustomer(customer)">Delete</button>
               </td>
             </tr>
           </tbody>
         </table>
+        </div>
         <div class="inline-form">
+          <input type="number" placeholder="ID" [(ngModel)]="updateCustomerForm.id" readonly>
           <input placeholder="Name" [(ngModel)]="updateCustomerForm.name">
           <input placeholder="Email" [(ngModel)]="updateCustomerForm.email">
+          <input placeholder="Mobile" [(ngModel)]="updateCustomerForm.mobile">
+          <input placeholder="Address" [(ngModel)]="updateCustomerForm.address">
+          <select [(ngModel)]="updateCustomerForm.customerType">
+            <option>Residential</option>
+            <option>Commercial</option>
+          </select>
+          <select [(ngModel)]="updateCustomerForm.electricalSection">
+            <option>Office</option>
+            <option>Region</option>
+          </select>
           <button class="primary" (click)="updateCustomer()" [disabled]="!updateCustomerForm.id">Update</button>
         </div>
         <div class="inline-form">
@@ -253,6 +319,7 @@
   </ng-container>
 
   <ng-template #complaintTable let-items="items" let-source="source">
+    <div class="table-scroll">
     <table>
       <thead><tr><th>ID</th><th>Complaint</th><th>Department</th><th>Status</th><th>Remarks</th><th></th></tr></thead>
       <tbody>
@@ -266,6 +333,7 @@
         </tr>
       </tbody>
     </table>
+    </div>
   </ng-template>
 
   <section class="toast-stack" aria-live="polite" aria-atomic="true">
@@ -273,6 +341,71 @@
       <span>{{ toast.tone }}</span>
       <strong>{{ toast.text }}</strong>
     </button>
+  </section>
+
+  <section class="modal-backdrop gateway-layer" *ngIf="paymentGateway() as gateway">
+    <div class="gateway-card">
+      <div class="gateway-head">
+        <div>
+          <p class="eyebrow">Dummy Payment Gateway</p>
+          <h2>Pay {{ gateway.bill.amount | currency:'INR' }}</h2>
+        </div>
+        <button class="secondary icon-button" (click)="closePaymentGateway()">X</button>
+      </div>
+
+      <div class="gateway-summary">
+        <span>Bill <strong>#{{ gateway.bill.id }}</strong></span>
+        <span>Month <strong>{{ gateway.bill.month }}</strong></span>
+        <span>Due <strong>{{ gateway.bill.dueDate | date }}</strong></span>
+      </div>
+
+      <div class="payment-methods">
+        <button [class.active]="gateway.method === 'card'" (click)="updatePaymentGateway({ method: 'card' })">
+          Card
+        </button>
+        <button [class.active]="gateway.method === 'cash'" (click)="updatePaymentGateway({ method: 'cash' })">
+          Pay on Cash
+        </button>
+      </div>
+
+      <div *ngIf="gateway.method === 'card'; else cashPayment">
+        <div class="dummy-card">
+          <div>
+            <span>Demo Card</span>
+            <strong>4242 4242 4242 4242</strong>
+          </div>
+          <button class="secondary" (click)="fillDummyCard()">Use Card</button>
+        </div>
+        <label>Card Holder
+          <input [ngModel]="gateway.cardName" (ngModelChange)="updatePaymentGateway({ cardName: $event })">
+        </label>
+        <label>Card Number
+          <input inputmode="numeric" placeholder="4242 4242 4242 4242" [ngModel]="gateway.cardNumber" (ngModelChange)="updatePaymentGateway({ cardNumber: $event })">
+        </label>
+        <div class="gateway-fields">
+          <label>Expiry
+            <input placeholder="MM/YY" [ngModel]="gateway.expiry" (ngModelChange)="updatePaymentGateway({ expiry: $event })">
+          </label>
+          <label>CVV
+            <input inputmode="numeric" type="password" maxlength="3" [ngModel]="gateway.cvv" (ngModelChange)="updatePaymentGateway({ cvv: $event })">
+          </label>
+        </div>
+      </div>
+
+      <ng-template #cashPayment>
+        <div class="cash-box">
+          <strong>Cash collection selected</strong>
+          <p>This dummy gateway will mark the bill as paid and store the receipt as a cash payment.</p>
+        </div>
+      </ng-template>
+
+      <div class="actions end">
+        <button class="secondary" (click)="closePaymentGateway()">Cancel</button>
+        <button class="primary" (click)="completeGatewayPayment()" [disabled]="loading()">
+          Complete Payment
+        </button>
+      </div>
+    </div>
   </section>
 
   <section class="modal-backdrop" *ngIf="confirmation() as dialog">

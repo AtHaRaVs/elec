@@ -23,8 +23,11 @@ Simple full-stack application for the sprint requirement:
 ### Admin
 
 - Add, update, search, and list customers
+- View full customer details including customer ID, address, mobile, customer type, electrical section, connection status, and all linked consumer numbers
 - Add consumer numbers for existing customers
+- Filter customers by electrical section and customer type
 - Disconnect or reconnect customers
+- Delete customers with confirmation
 - Add bill for a customer
 - Bulk upload bills for multiple customers
 - View and filter complaints
@@ -94,4 +97,12 @@ frontend/
   src/app/app.component.ts
   src/app/app.component.html
   src/app/app.component.css
+```
+
+## Explanation Document
+
+For viva/teacher questions, see:
+
+```text
+PROJECT_EXPLANATION.md
 ```

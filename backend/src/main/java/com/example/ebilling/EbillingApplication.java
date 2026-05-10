@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -112,13 +113,17 @@ class ApiController {
   }
 
   @GetMapping("/admin/customers")
-  List<Customer> customers(@RequestParam Optional<String> search) {
-    return store.customers(search);
+  List<Customer> customers(
+      @RequestParam Optional<String> search,
+      @RequestParam Optional<String> electricalSection,
+      @RequestParam Optional<String> customerType
+  ) {
+    return store.customers(search, electricalSection, customerType);
   }
 
   @PostMapping("/admin/customers")
   Customer addCustomer(@Valid @RequestBody AdminCustomerRequest request) {
-    return store.addCustomer(request.name(), request.email(), request.password(), request.consumerNumber());
+    return store.addCustomer(request);
   }
 
   @PutMapping("/admin/customers/{customerId}")
@@ -184,6 +189,12 @@ class ApiController {
   Map<String, String> badRequest(IllegalArgumentException exception) {
     return Map.of("message", exception.getMessage());
   }
+
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  @ResponseStatus(HttpStatus.BAD_REQUEST)
+  Map<String, String> validationError() {
+    return Map.of("message", "Please fill all required fields correctly");
+  }
 }
 
 @Repository
@@ -228,7 +239,16 @@ class Store {
     if (exists("select count(*) from users where lower(email) = lower(?)", request.email())) {
       throw new IllegalArgumentException("Email is already registered");
     }
-    return toUserView(addCustomer(request.name(), request.email(), request.password(), request.consumerNumber()), "CUSTOMER");
+    return toUserView(addCustomer(new AdminCustomerRequest(
+        request.name(),
+        request.email(),
+        request.password(),
+        request.consumerNumber(),
+        request.address(),
+        request.mobile(),
+        request.customerType(),
+        request.electricalSection()
+    )), "CUSTOMER");
   }
 
   UserView login(LoginRequest request) {
@@ -259,6 +279,9 @@ class Store {
     var bill = requireBill(billId);
     if (bill.customerId != customerId) {
       throw new NotFoundException("Bill does not belong to this customer");
+    }
+    if ("PAID".equalsIgnoreCase(bill.status)) {
+      throw new IllegalArgumentException("Bill is already paid");
     }
     jdbc.update("update bills set status = 'PAID' where id = ?", billId);
     var paidAt = LocalDateTime.now();
@@ -293,40 +316,50 @@ class Store {
     return jdbc.query("select * from complaints where customer_id = ? order by created_on desc, id desc", complaintMapper, customerId);
   }
 
-  List<Customer> customers(Optional<String> search) {
+  List<Customer> customers(Optional<String> search, Optional<String> electricalSection, Optional<String> customerType) {
     var term = "%" + search.orElse("").toLowerCase(Locale.ROOT) + "%";
     var ids = jdbc.queryForList("""
         select c.id from customers c
         left join consumer_numbers cn on cn.customer_id = c.id
-        where lower(c.name) like ? or lower(c.email) like ? or lower(cn.consumer_number) like ?
+        where (lower(c.name) like ? or lower(c.email) like ? or lower(cn.consumer_number) like ?
+          or cast(c.id as varchar) like ?)
+          and (? is null or lower(c.electrical_section) = lower(?))
+          and (? is null or lower(c.customer_type) = lower(?))
         group by c.id, c.name
         order by c.name
-        """, Long.class, term, term, term);
+        """, Long.class, term, term, term, term,
+        blankToNull(electricalSection), blankToNull(electricalSection),
+        blankToNull(customerType), blankToNull(customerType));
     return ids.stream().map(this::requireCustomer).toList();
   }
 
-  Customer addCustomer(String name, String email, String password, String consumerNumber) {
-    if (exists("select count(*) from customers where lower(email) = lower(?)", email)) {
+  Customer addCustomer(AdminCustomerRequest request) {
+    if (exists("select count(*) from customers where lower(email) = lower(?)", request.email())) {
       throw new IllegalArgumentException("Customer email already exists");
     }
-    if (exists("select count(*) from consumer_numbers where consumer_number = ?", consumerNumber)) {
+    if (exists("select count(*) from consumer_numbers where consumer_number = ?", request.consumerNumber())) {
       throw new IllegalArgumentException("Consumer number already exists");
     }
     long customerId = insert("""
         insert into customers(name, email, address, mobile, customer_type, electrical_section, connection_status)
-        values (?, ?, '', '', 'Residential', 'Office', 'ACTIVE')
-        """, name, email);
-    jdbc.update("insert into consumer_numbers(customer_id, consumer_number) values (?, ?)", customerId, consumerNumber);
+        values (?, ?, ?, ?, ?, ?, 'ACTIVE')
+        """, request.name(), request.email(), request.address(), request.mobile(), request.customerType(), request.electricalSection());
+    jdbc.update("insert into consumer_numbers(customer_id, consumer_number) values (?, ?)", customerId, request.consumerNumber());
     jdbc.update("""
         insert into users(id, name, email, password_hash, role, customer_id)
         values (?, ?, ?, ?, 'CUSTOMER', ?)
-        """, customerId, name, email, hash(password), customerId);
+        """, customerId, request.name(), request.email(), hash(request.password()), customerId);
     return requireCustomer(customerId);
   }
 
   Customer updateCustomer(long customerId, UpdateCustomerRequest request) {
     requireCustomer(customerId);
-    jdbc.update("update customers set name = ?, email = ? where id = ?", request.name(), request.email(), customerId);
+    jdbc.update("""
+        update customers
+        set name = ?, email = ?, address = ?, mobile = ?, customer_type = ?, electrical_section = ?
+        where id = ?
+        """, request.name(), request.email(), request.address(), request.mobile(),
+        request.customerType(), request.electricalSection(), customerId);
     jdbc.update("update users set name = ?, email = ? where customer_id = ?", request.name(), request.email(), customerId);
     return requireCustomer(customerId);
   }
@@ -389,7 +422,11 @@ class Store {
         rs.getString("name"),
         rs.getString("email"),
         consumerNumbers(rs.getLong("id")),
-        rs.getString("connection_status")
+        rs.getString("connection_status"),
+        rs.getString("address"),
+        rs.getString("mobile"),
+        rs.getString("customer_type"),
+        rs.getString("electrical_section")
     ), id);
     return rows.stream().findFirst().orElseThrow(() -> new NotFoundException("Customer not found"));
   }
@@ -589,13 +626,21 @@ class Customer {
   public String email;
   public List<String> consumerNumbers;
   public String connectionStatus;
+  public String address;
+  public String mobile;
+  public String customerType;
+  public String electricalSection;
 
-  Customer(long id, String name, String email, List<String> consumerNumbers, String connectionStatus) {
+  Customer(long id, String name, String email, List<String> consumerNumbers, String connectionStatus, String address, String mobile, String customerType, String electricalSection) {
     this.id = id;
     this.name = name;
     this.email = email;
     this.consumerNumbers = new ArrayList<>(consumerNumbers);
     this.connectionStatus = connectionStatus;
+    this.address = address;
+    this.mobile = mobile;
+    this.customerType = customerType;
+    this.electricalSection = electricalSection;
   }
 }
 
@@ -644,13 +689,13 @@ class Complaint {
 record UserView(long id, String name, String email, String role, Long customerId) {}
 record BillSummary(int totalBills, BigDecimal outstandingAmount, BigDecimal paidAmount) {}
 record Payment(long id, long customerId, long billId, BigDecimal amount, String cardLast4, LocalDateTime paidAt) {}
-record RegisterRequest(@NotBlank String name, @Email String email, @NotBlank String password, @NotBlank String consumerNumber) {}
+record RegisterRequest(@NotBlank String name, @Email String email, @NotBlank String password, @NotBlank String consumerNumber, @NotBlank String address, @NotBlank String mobile, @NotBlank String customerType, @NotBlank String electricalSection) {}
 record LoginRequest(@Email String email, @NotBlank String password, @NotBlank String role) {}
 record PayRequest(@NotBlank String cardLast4) {}
 record ComplaintRequest(@NotBlank String title, @NotBlank String department, @NotBlank String description) {}
 record ComplaintUpdateRequest(@NotBlank String status, String remarks) {}
-record AdminCustomerRequest(@NotBlank String name, @Email String email, @NotBlank String password, @NotBlank String consumerNumber) {}
-record UpdateCustomerRequest(@NotBlank String name, @Email String email) {}
+record AdminCustomerRequest(@NotBlank String name, @Email String email, @NotBlank String password, @NotBlank String consumerNumber, @NotBlank String address, @NotBlank String mobile, @NotBlank String customerType, @NotBlank String electricalSection) {}
+record UpdateCustomerRequest(@NotBlank String name, @Email String email, @NotBlank String address, @NotBlank String mobile, @NotBlank String customerType, @NotBlank String electricalSection) {}
 record ConsumerNumberRequest(@NotBlank String consumerNumber) {}
 record ConnectionRequest(@NotBlank String connectionStatus) {}
 record BillRequest(@NotNull Long customerId, @NotBlank String month, int units, @NotNull BigDecimal amount, @NotNull LocalDate dueDate) {}

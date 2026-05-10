@@ -20,6 +20,10 @@ interface Customer {
   email: string;
   consumerNumbers: string[];
   connectionStatus: string;
+  address: string;
+  mobile: string;
+  customerType: string;
+  electricalSection: string;
 }
 
 interface Bill {
@@ -72,6 +76,15 @@ interface Confirmation {
   onConfirm: () => void;
 }
 
+interface PaymentGateway {
+  bill: Bill;
+  method: 'card' | 'cash';
+  cardName: string;
+  cardNumber: string;
+  expiry: string;
+  cvv: string;
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -90,14 +103,17 @@ export class AppComponent {
   toasts = signal<Toast[]>([]);
   confirmation = signal<Confirmation | null>(null);
   selectedComplaint = signal<Complaint | null>(null);
+  paymentGateway = signal<PaymentGateway | null>(null);
   complaintSource = signal<'ADMIN' | 'SME'>('ADMIN');
   private toastId = 0;
 
   loginForm = { email: 'customer@demo.com', password: 'customer123', role: 'CUSTOMER' as Role };
-  registerForm = { name: '', email: '', password: '', consumerNumber: '' };
+  registerForm = { name: '', email: '', password: '', consumerNumber: '', address: '', mobile: '', customerType: 'Residential', electricalSection: 'Office' };
   billFilter = '';
   complaintFilter = '';
   adminSearch = '';
+  adminSectionFilter = '';
+  adminTypeFilter = '';
   adminComplaintStatus = '';
   adminComplaintDepartment = '';
   smeStatus = '';
@@ -112,8 +128,8 @@ export class AppComponent {
   smeComplaints: Complaint[] = [];
 
   complaintForm = { title: '', department: 'Operations', description: '' };
-  customerForm = { name: '', email: '', password: 'customer123', consumerNumber: '' };
-  updateCustomerForm = { id: 0, name: '', email: '' };
+  customerForm = { name: '', email: '', password: 'customer123', consumerNumber: '', address: '', mobile: '', customerType: 'Residential', electricalSection: 'Office' };
+  updateCustomerForm = { id: 0, name: '', email: '', address: '', mobile: '', customerType: 'Residential', electricalSection: 'Office' };
   consumerNumberForm = { customerId: 0, consumerNumber: '' };
   billForm = { customerId: 1, month: 'May 2026', units: 100, amount: 750, dueDate: this.todayPlus(15) };
   bulkBillForm = { customerIds: '', month: 'May 2026', units: 100, amount: 750, dueDate: this.todayPlus(15) };
@@ -153,7 +169,7 @@ export class AppComponent {
         this.user.set(user);
         this.activeTab.set('dashboard');
         this.showToast('Registration completed', 'success');
-        this.registerForm = { name: '', email: '', password: '', consumerNumber: '' };
+        this.registerForm = { name: '', email: '', password: '', consumerNumber: '', address: '', mobile: '', customerType: 'Residential', electricalSection: 'Office' };
         this.loadData();
       },
       error: error => this.fail(error),
@@ -231,25 +247,73 @@ export class AppComponent {
   }
 
   payBill(bill: Bill): void {
-    const customerId = this.user()?.customerId;
-    if (!customerId) {
+    if (!this.user()?.customerId) {
       return;
     }
-    this.requestConfirmation({
-      title: 'Pay this bill?',
-      message: `Confirm payment of Rs. ${bill.amount} for ${bill.month}.`,
-      actionLabel: 'Pay bill',
-      onConfirm: () => this.payBillConfirmed(bill, customerId)
+    if (bill.status !== 'UNPAID') {
+      this.showToast('This bill is already paid.', 'error');
+      return;
+    }
+    this.paymentGateway.set({
+      bill,
+      method: 'card',
+      cardName: '',
+      cardNumber: '',
+      expiry: '',
+      cvv: ''
     });
   }
 
-  private payBillConfirmed(bill: Bill, customerId: number): void {
-    this.http.post<Payment>(`${this.api}/customers/${customerId}/bills/${bill.id}/pay`, { cardLast4: '4242' }).subscribe({
+  closePaymentGateway(): void {
+    this.paymentGateway.set(null);
+  }
+
+  fillDummyCard(): void {
+    const gateway = this.paymentGateway();
+    if (!gateway) {
+      return;
+    }
+    this.paymentGateway.set({
+      ...gateway,
+      method: 'card',
+      cardName: 'Demo Customer',
+      cardNumber: '4242424242424242',
+      expiry: '12/30',
+      cvv: '123'
+    });
+  }
+
+  updatePaymentGateway(patch: Partial<PaymentGateway>): void {
+    const gateway = this.paymentGateway();
+    if (!gateway) {
+      return;
+    }
+    this.paymentGateway.set({ ...gateway, ...patch });
+  }
+
+  completeGatewayPayment(): void {
+    const customerId = this.user()?.customerId;
+    const gateway = this.paymentGateway();
+    if (!customerId || !gateway) {
+      return;
+    }
+    const cardLast4 = gateway.method === 'cash' ? 'CASH' : this.validateCardAndGetLast4(gateway);
+    if (!cardLast4) {
+      return;
+    }
+    this.payBillConfirmed(gateway.bill, customerId, cardLast4);
+  }
+
+  private payBillConfirmed(bill: Bill, customerId: number, cardLast4: string): void {
+    this.loading.set(true);
+    this.http.post<Payment>(`${this.api}/customers/${customerId}/bills/${bill.id}/pay`, { cardLast4 }).subscribe({
       next: () => {
-        this.showToast('Bill paid and payment details generated', 'success');
+        this.paymentGateway.set(null);
+        this.showToast('Payment completed and receipt generated.', 'success');
         this.loadCustomerData();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Payment could not be completed. Please try again.'),
+      complete: () => this.loading.set(false)
     });
   }
 
@@ -264,12 +328,16 @@ export class AppComponent {
         this.complaintForm = { title: '', department: 'Operations', description: '' };
         this.loadCustomerData();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Complaint could not be submitted. Please check the details.')
     });
   }
 
   loadCustomers(): void {
-    const query = this.adminSearch ? `?search=${encodeURIComponent(this.adminSearch)}` : '';
+    const params = new URLSearchParams();
+    if (this.adminSearch) params.set('search', this.adminSearch);
+    if (this.adminSectionFilter) params.set('electricalSection', this.adminSectionFilter);
+    if (this.adminTypeFilter) params.set('customerType', this.adminTypeFilter);
+    const query = params.toString() ? `?${params}` : '';
     this.http.get<Customer[]>(`${this.api}/admin/customers${query}`).subscribe(data => {
       this.customers = data;
       if (data.length && !this.billForm.customerId) {
@@ -282,15 +350,23 @@ export class AppComponent {
     this.http.post<Customer>(`${this.api}/admin/customers`, this.customerForm).subscribe({
       next: () => {
         this.showToast('Customer added', 'success');
-        this.customerForm = { name: '', email: '', password: 'customer123', consumerNumber: '' };
+        this.customerForm = { name: '', email: '', password: 'customer123', consumerNumber: '', address: '', mobile: '', customerType: 'Residential', electricalSection: 'Office' };
         this.loadCustomers();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Customer could not be added. Please check the details.')
     });
   }
 
   editCustomer(customer: Customer): void {
-    this.updateCustomerForm = { id: customer.id, name: customer.name, email: customer.email };
+    this.updateCustomerForm = {
+      id: customer.id,
+      name: customer.name,
+      email: customer.email,
+      address: customer.address,
+      mobile: customer.mobile,
+      customerType: customer.customerType,
+      electricalSection: customer.electricalSection
+    };
     this.consumerNumberForm.customerId = customer.id;
   }
 
@@ -300,7 +376,7 @@ export class AppComponent {
         this.showToast('Customer updated', 'success');
         this.loadCustomers();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Customer details could not be updated.')
     });
   }
 
@@ -312,7 +388,7 @@ export class AppComponent {
         this.consumerNumberForm.consumerNumber = '';
         this.loadCustomers();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Consumer number could not be added.')
     });
   }
 
@@ -332,7 +408,30 @@ export class AppComponent {
         this.showToast(`Connection ${connectionStatus.toLowerCase()}`, 'success');
         this.loadCustomers();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Connection status could not be changed.')
+    });
+  }
+
+  deleteCustomer(customer: Customer): void {
+    this.requestConfirmation({
+      title: 'Delete customer?',
+      message: `Customer #${customer.id} (${customer.name}) and linked consumers, bills, payments, and complaints will be removed.`,
+      actionLabel: 'Delete',
+      tone: 'danger',
+      onConfirm: () => this.deleteCustomerConfirmed(customer)
+    });
+  }
+
+  private deleteCustomerConfirmed(customer: Customer): void {
+    this.http.delete<void>(`${this.api}/admin/customers/${customer.id}`).subscribe({
+      next: () => {
+        this.showToast(`Customer #${customer.id} deleted`, 'success');
+        if (this.updateCustomerForm.id === customer.id) {
+          this.updateCustomerForm = { id: 0, name: '', email: '', address: '', mobile: '', customerType: 'Residential', electricalSection: 'Office' };
+        }
+        this.loadCustomers();
+      },
+      error: error => this.fail(error, 'Customer could not be deleted.')
     });
   }
 
@@ -342,7 +441,7 @@ export class AppComponent {
         this.showToast('Bill added', 'success');
         this.loadCustomers();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Bill could not be added. Please check the customer and bill details.')
     });
   }
 
@@ -353,7 +452,7 @@ export class AppComponent {
     };
     this.http.post<Bill[]>(`${this.api}/admin/bills/bulk`, payload).subscribe({
       next: bills => this.showToast(`${bills.length} bills uploaded`, 'success'),
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Bulk bill upload failed. Please verify the customer IDs.')
     });
   }
 
@@ -403,7 +502,7 @@ export class AppComponent {
         this.selectedComplaint.set(null);
         source === 'ADMIN' ? this.loadAdminComplaints() : this.loadSmeComplaints();
       },
-      error: error => this.fail(error)
+      error: error => this.fail(error, 'Complaint status could not be updated.')
     });
   }
 
@@ -414,9 +513,13 @@ export class AppComponent {
   }
 
   downloadPayment(payment: Payment): void {
-    const text = `Payment #${payment.id}\nBill #${payment.billId}\nAmount: Rs. ${payment.amount}\nCard: **** ${payment.cardLast4}\nPaid At: ${payment.paidAt}`;
+    const text = `Payment #${payment.id}\nBill #${payment.billId}\nAmount: Rs. ${payment.amount}\nMode: ${this.paymentMode(payment)}\nPaid At: ${payment.paidAt}`;
     this.download(`payment-${payment.id}.txt`, text);
     this.showToast('Payment receipt downloaded', 'info');
+  }
+
+  paymentMode(payment: Payment): string {
+    return payment.cardLast4 === 'CASH' ? 'Pay on Cash' : `Card ending ${payment.cardLast4}`;
   }
 
   confirmAction(): void {
@@ -452,9 +555,62 @@ export class AppComponent {
     return date.toISOString().slice(0, 10);
   }
 
-  private fail(error: { error?: { message?: string }, message?: string }): void {
-    this.showToast(error.error?.message || error.message || 'Something went wrong', 'error');
+  private validateCardAndGetLast4(gateway: PaymentGateway): string {
+    const digits = gateway.cardNumber.replace(/\D/g, '');
+    if (!gateway.cardName.trim()) {
+      this.showToast('Enter the card holder name.', 'error');
+      return '';
+    }
+    if (digits.length !== 16) {
+      this.showToast('Enter a valid 16 digit card number, or use the demo card.', 'error');
+      return '';
+    }
+    if (!/^\d{2}\/\d{2}$/.test(gateway.expiry.trim())) {
+      this.showToast('Enter expiry in MM/YY format.', 'error');
+      return '';
+    }
+    if (!/^\d{3}$/.test(gateway.cvv.trim())) {
+      this.showToast('Enter a valid 3 digit CVV.', 'error');
+      return '';
+    }
+    return digits.slice(-4);
+  }
+
+  private fail(error: { status?: number, error?: { message?: string }, message?: string }, fallback = 'We could not complete that action. Please try again.'): void {
+    this.showToast(this.friendlyError(error, fallback), 'error');
     this.loading.set(false);
+  }
+
+  private friendlyError(error: { status?: number, error?: { message?: string }, message?: string }, fallback: string): string {
+    const serverMessage = (error.error?.message || '').toLowerCase();
+    if (error.status === 0) {
+      return 'Server is not reachable. Please start the backend and try again.';
+    }
+    if (serverMessage.includes('invalid login')) {
+      return 'Email, password, or selected role is incorrect.';
+    }
+    if (serverMessage.includes('email')) {
+      return 'This email is already used or is not valid.';
+    }
+    if (serverMessage.includes('consumer number')) {
+      return 'This consumer number is already linked or is not valid.';
+    }
+    if (serverMessage.includes('customer not found')) {
+      return 'No customer record was found for that ID.';
+    }
+    if (serverMessage.includes('bill not found')) {
+      return 'No bill was found for this payment.';
+    }
+    if (serverMessage.includes('already paid')) {
+      return 'This bill has already been paid.';
+    }
+    if (error.status === 400) {
+      return fallback;
+    }
+    if (error.status === 404) {
+      return 'The requested record could not be found.';
+    }
+    return fallback;
   }
 
   private requestConfirmation(confirmation: Confirmation): void {
