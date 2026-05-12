@@ -30,7 +30,12 @@
 
       <div *ngIf="authMode() === 'login'; else signupForm">
         <label>Email <input [(ngModel)]="loginForm.email"></label>
-        <label>Password <input type="password" [(ngModel)]="loginForm.password"></label>
+        <label>Password
+          <span class="password-field">
+            <input [type]="showPassword() ? 'text' : 'password'" [(ngModel)]="loginForm.password">
+            <button class="secondary" type="button" (click)="showPassword.set(!showPassword())">{{ showPassword() ? 'Hide' : 'Show' }}</button>
+          </span>
+        </label>
         <button class="primary full" (click)="login()" [disabled]="loading()">Login</button>
 
         <div class="auth-switch">
@@ -41,12 +46,12 @@
       </div>
 
       <ng-template #signupForm>
-        <label>Name <input [(ngModel)]="registerForm.name"></label>
-        <label>Email <input [(ngModel)]="registerForm.email"></label>
+        <label>Customer ID <input value="Auto generated" readonly></label>
+        <label>Name <input [(ngModel)]="registerForm.name" (input)="onNameInput(registerForm)"></label>
+        <label>Email <input type="email" [(ngModel)]="registerForm.email"></label>
         <label>Password <input type="password" [(ngModel)]="registerForm.password"></label>
-        <label>Consumer Number <input [(ngModel)]="registerForm.consumerNumber"></label>
         <label>Address <textarea [(ngModel)]="registerForm.address"></textarea></label>
-        <label>Mobile <input [(ngModel)]="registerForm.mobile"></label>
+        <label>Mobile <input inputmode="numeric" maxlength="10" [(ngModel)]="registerForm.mobile" (input)="onMobileInput(registerForm)"></label>
         <label>Customer Type
           <select [(ngModel)]="registerForm.customerType">
             <option>Residential</option>
@@ -71,7 +76,7 @@
 
   <ng-container *ngIf="user() as currentUser">
     <nav class="tabs">
-      <button *ngFor="let tab of roleTabs()" [class.active]="activeTab() === tab" (click)="activeTab.set(tab); loadData()">
+      <button *ngFor="let tab of roleTabs()" [class.active]="activeTab() === tab" (click)="setActiveTab(tab)">
         {{ tab | titlecase }}
       </button>
     </nav>
@@ -107,11 +112,13 @@
       </div>
       <div class="table-scroll">
       <table>
-        <thead><tr><th>Select</th><th>Bill</th><th>Month</th><th>Units</th><th>Amount</th><th>Due</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Select</th><th>Bill</th><th>Customer</th><th>Consumer</th><th>Month</th><th>Units</th><th>Amount</th><th>Bill Date</th><th>Status</th><th></th></tr></thead>
         <tbody>
           <tr *ngFor="let bill of bills">
             <td><input class="row-check" type="checkbox" [checked]="isBillSelected(bill)" [disabled]="bill.status !== 'UNPAID'" (change)="toggleBillSelection(bill, $any($event.target).checked)"></td>
             <td>#{{ bill.id }}</td>
+            <td>#{{ bill.customerId }}</td>
+            <td>{{ bill.consumerNumber }}</td>
             <td>{{ bill.month }}</td>
             <td>{{ bill.units }}</td>
             <td>{{ bill.amount | currency:'INR' }}</td>
@@ -157,6 +164,7 @@
             <option>Metering</option>
           </select>
         </label>
+        <label *ngIf="complaintForm.department === 'Billing'">Bill ID <input type="number" [(ngModel)]="complaintForm.billId"></label>
         <label>Description <textarea [(ngModel)]="complaintForm.description"></textarea></label>
         <button class="primary" (click)="addComplaint()">Submit</button>
       </div>
@@ -172,7 +180,7 @@
         </div>
         <article class="list-item" *ngFor="let complaint of complaints">
           <strong>{{ complaint.title }}</strong>
-          <span>{{ complaint.department }} · {{ complaint.status }}</span>
+          <span>{{ complaint.department }} · {{ complaint.status }}<ng-container *ngIf="complaint.billId"> · Bill #{{ complaint.billId }}</ng-container></span>
           <p>{{ complaint.description }}</p>
           <small>{{ complaint.remarks || 'No remarks yet' }}</small>
         </article>
@@ -182,12 +190,13 @@
     <section *ngIf="currentUser.role === 'ADMIN' && activeTab() === 'customers'" class="two-col wide">
       <div class="panel">
         <h2>Add Customer</h2>
-        <label>Name <input [(ngModel)]="customerForm.name"></label>
-        <label>Email <input [(ngModel)]="customerForm.email"></label>
+        <label>Customer ID <input value="Auto generated" readonly></label>
+        <label>Name <input [(ngModel)]="customerForm.name" (input)="onNameInput(customerForm)"></label>
+        <label>Email <input type="email" [(ngModel)]="customerForm.email"></label>
         <label>Password <input [(ngModel)]="customerForm.password"></label>
-        <label>Consumer Number <input [(ngModel)]="customerForm.consumerNumber"></label>
+        <label>Consumer Number <input value="Auto generated" readonly></label>
         <label>Address <textarea [(ngModel)]="customerForm.address"></textarea></label>
-        <label>Mobile <input [(ngModel)]="customerForm.mobile"></label>
+        <label>Mobile <input inputmode="numeric" maxlength="10" [(ngModel)]="customerForm.mobile" (input)="onMobileInput(customerForm)"></label>
         <label>Customer Type
           <select [(ngModel)]="customerForm.customerType">
             <option>Residential</option>
@@ -251,26 +260,40 @@
           <span>Page {{ customerPage }} of {{ customerTotalPages() }}</span>
           <button class="secondary" (click)="changeCustomerPage(1)" [disabled]="customerPage === customerTotalPages()">Next</button>
         </div>
-        <div class="inline-form">
-          <input type="number" placeholder="ID" [(ngModel)]="updateCustomerForm.id" readonly>
-          <input placeholder="Name" [(ngModel)]="updateCustomerForm.name">
-          <input placeholder="Email" [(ngModel)]="updateCustomerForm.email">
-          <input placeholder="Mobile" [(ngModel)]="updateCustomerForm.mobile">
-          <input placeholder="Address" [(ngModel)]="updateCustomerForm.address">
-          <select [(ngModel)]="updateCustomerForm.customerType">
-            <option>Residential</option>
-            <option>Commercial</option>
-          </select>
-          <select [(ngModel)]="updateCustomerForm.electricalSection">
-            <option>Office</option>
-            <option>Region</option>
-          </select>
-          <button class="primary" (click)="updateCustomer()" [disabled]="!updateCustomerForm.id">Update</button>
+        <div class="form-block">
+          <h3>Edit Selected Customer</h3>
+          <div class="form-grid customer-edit-grid">
+            <label>Customer ID <input type="number" placeholder="ID" [(ngModel)]="updateCustomerForm.id" readonly></label>
+            <label>Name <input placeholder="Name" [(ngModel)]="updateCustomerForm.name" (input)="onNameInput(updateCustomerForm)"></label>
+            <label>Email <input type="email" placeholder="Email" [(ngModel)]="updateCustomerForm.email"></label>
+            <label>Mobile <input inputmode="numeric" maxlength="10" placeholder="Mobile" [(ngModel)]="updateCustomerForm.mobile" (input)="onMobileInput(updateCustomerForm)"></label>
+            <label class="wide-field">Address <input placeholder="Address" [(ngModel)]="updateCustomerForm.address"></label>
+            <label>Customer Type
+              <select [(ngModel)]="updateCustomerForm.customerType">
+                <option>Residential</option>
+                <option>Commercial</option>
+              </select>
+            </label>
+            <label>Electrical Section
+              <select [(ngModel)]="updateCustomerForm.electricalSection">
+                <option>Office</option>
+                <option>Region</option>
+              </select>
+            </label>
+            <div class="form-actions">
+              <button class="primary" (click)="updateCustomer()" [disabled]="!updateCustomerForm.id">Update</button>
+            </div>
+          </div>
         </div>
-        <div class="inline-form">
-          <input type="number" placeholder="Customer ID" [(ngModel)]="consumerNumberForm.customerId">
-          <input placeholder="New consumer number" [(ngModel)]="consumerNumberForm.consumerNumber">
-          <button class="primary" (click)="addConsumerNumber()">Add Number</button>
+        <div class="form-block">
+          <h3>Generate Consumer Number</h3>
+          <div class="form-grid consumer-generate-grid">
+            <label>Customer ID <input type="number" placeholder="Customer ID" [(ngModel)]="consumerNumberForm.customerId"></label>
+            <label>Consumer Number <input value="Auto generated" readonly></label>
+            <div class="form-actions">
+              <button class="primary" (click)="addConsumerNumber()">Generate Consumer</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -278,20 +301,27 @@
     <section *ngIf="currentUser.role === 'ADMIN' && activeTab() === 'bills'" class="two-col">
       <div class="panel">
         <h2>Add Bill</h2>
-        <label>Customer ID <input type="number" [(ngModel)]="billForm.customerId"></label>
+        <label>Customer ID <input type="number" [(ngModel)]="billForm.customerId" (change)="syncBillConsumerNumber()"></label>
+        <label>Consumer Number
+          <select [(ngModel)]="billForm.consumerNumber">
+            <ng-container *ngFor="let customer of customers">
+              <option *ngFor="let consumerNo of customer.consumerNumbers" [value]="consumerNo" [hidden]="customer.id !== billForm.customerId">{{ consumerNo }}</option>
+            </ng-container>
+          </select>
+        </label>
         <label>Month <input [(ngModel)]="billForm.month"></label>
-        <label>Units <input type="number" [(ngModel)]="billForm.units"></label>
-        <label>Amount <input type="number" [(ngModel)]="billForm.amount"></label>
-        <label>Due Date <input type="date" [(ngModel)]="billForm.dueDate"></label>
+        <label>Units <input type="number" min="1" [(ngModel)]="billForm.units"></label>
+        <label>Amount <input type="number" min="1" max="5000" [(ngModel)]="billForm.amount"></label>
+        <label>Bill Date <input type="date" [min]="minBillDate()" [max]="today()" [(ngModel)]="billForm.dueDate"></label>
         <button class="primary" (click)="addBill()">Add Bill</button>
       </div>
       <div class="panel">
         <h2>Bulk Upload Bills</h2>
         <label>Customer IDs <input placeholder="1,2,3" [(ngModel)]="bulkBillForm.customerIds"></label>
         <label>Month <input [(ngModel)]="bulkBillForm.month"></label>
-        <label>Units <input type="number" [(ngModel)]="bulkBillForm.units"></label>
-        <label>Amount <input type="number" [(ngModel)]="bulkBillForm.amount"></label>
-        <label>Due Date <input type="date" [(ngModel)]="bulkBillForm.dueDate"></label>
+        <label>Units <input type="number" min="1" [(ngModel)]="bulkBillForm.units"></label>
+        <label>Amount <input type="number" min="1" max="5000" [(ngModel)]="bulkBillForm.amount"></label>
+        <label>Bill Date <input type="date" [min]="minBillDate()" [max]="today()" [(ngModel)]="bulkBillForm.dueDate"></label>
         <button class="primary" (click)="bulkUploadBills()">Upload</button>
       </div>
       <div class="panel full-row">
@@ -308,16 +338,18 @@
         </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Bill</th><th>Customer</th><th>Billing Period</th><th>Units</th><th>Amount</th><th>Due Date</th><th>Status</th></tr></thead>
+            <thead><tr><th>Bill</th><th>Customer</th><th>Consumer</th><th>Billing Period</th><th>Units</th><th>Amount</th><th>Bill Date</th><th>Status</th><th></th></tr></thead>
             <tbody>
               <tr *ngFor="let bill of adminBills">
                 <td>#{{ bill.id }}</td>
                 <td>#{{ bill.customerId }}</td>
+                <td>{{ bill.consumerNumber }}</td>
                 <td>{{ bill.month }}</td>
                 <td>{{ bill.units }}</td>
                 <td>{{ bill.amount | currency:'INR' }}</td>
                 <td>{{ bill.dueDate | date }}</td>
                 <td><span class="badge">{{ bill.status }}</span></td>
+                <td><button class="primary" *ngIf="bill.status === 'UNPAID'" (click)="adminPayBill(bill)">Pay</button></td>
               </tr>
             </tbody>
           </table>
@@ -357,20 +389,44 @@
       </div>
       <ng-container *ngTemplateOutlet="complaintTable; context: { items: smeComplaints, source: 'SME' }"></ng-container>
     </section>
+
+    <section *ngIf="activeTab() === 'profile'" class="panel profile-panel">
+      <h2>Edit Profile</h2>
+      <label>Name <input [(ngModel)]="profileForm.name" (input)="onNameInput(profileForm)"></label>
+      <label>Email <input type="email" [(ngModel)]="profileForm.email"></label>
+      <ng-container *ngIf="currentUser.role === 'CUSTOMER'">
+        <label>Address <textarea [(ngModel)]="profileForm.address"></textarea></label>
+        <label>Mobile <input inputmode="numeric" maxlength="10" [(ngModel)]="profileForm.mobile" (input)="onMobileInput(profileForm)"></label>
+        <label>Customer Type
+          <select [(ngModel)]="profileForm.customerType">
+            <option>Residential</option>
+            <option>Commercial</option>
+          </select>
+        </label>
+        <label>Electrical Section
+          <select [(ngModel)]="profileForm.electricalSection">
+            <option>Office</option>
+            <option>Region</option>
+          </select>
+        </label>
+      </ng-container>
+      <button class="primary" (click)="saveProfile()">Save Profile</button>
+    </section>
   </ng-container>
 
   <ng-template #complaintTable let-items="items" let-source="source">
     <div class="table-scroll">
     <table>
-      <thead><tr><th>ID</th><th>Complaint</th><th>Department</th><th>Status</th><th>Remarks</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Complaint</th><th>Bill</th><th>Department</th><th>Status</th><th>Remarks</th><th></th></tr></thead>
       <tbody>
         <tr *ngFor="let complaint of items">
           <td>#{{ complaint.id }}</td>
           <td><strong>{{ complaint.title }}</strong><br><small>{{ complaint.description }}</small></td>
+          <td>{{ complaint.billId ? '#' + complaint.billId : '-' }}</td>
           <td>{{ complaint.department }}</td>
           <td>{{ complaint.status }}</td>
           <td>{{ complaint.remarks || '-' }}</td>
-          <td><button class="secondary" (click)="prepareStatus(complaint, source)">Act</button></td>
+          <td><button class="secondary" [disabled]="complaint.status === 'RESOLVED'" (click)="prepareStatus(complaint, source)">{{ complaint.status === 'RESOLVED' ? 'Locked' : 'Act' }}</button></td>
         </tr>
       </tbody>
     </table>
@@ -404,18 +460,20 @@
         <button [class.active]="gateway.method === 'card'" (click)="updatePaymentGateway({ method: 'card' })">
           Card
         </button>
-        <button [class.active]="gateway.method === 'cash'" (click)="updatePaymentGateway({ method: 'cash' })">
+        <button *ngIf="gateway.allowCash" [class.active]="gateway.method === 'cash'" (click)="updatePaymentGateway({ method: 'cash' })">
           Pay on Cash
         </button>
       </div>
 
       <div *ngIf="gateway.method === 'card'; else cashPayment">
-        <div class="dummy-card">
+        <div class="dummy-cards">
+        <div class="dummy-card" *ngFor="let card of dummyCards">
           <div>
             <span>Demo Card</span>
-            <strong>4242 4242 4242 4242</strong>
+            <strong>{{ card.number }}</strong>
           </div>
-          <button class="secondary" (click)="fillDummyCard()">Use Card</button>
+          <button class="secondary" (click)="fillDummyCard(card)">Use Card</button>
+        </div>
         </div>
         <label>Card Holder
           <input [ngModel]="gateway.cardName" (ngModelChange)="updatePaymentGateway({ cardName: $event })">

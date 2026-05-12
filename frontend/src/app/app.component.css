@@ -182,6 +182,21 @@ h2 {
   margin-top: 6px;
 }
 
+.password-field {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+  margin-top: 6px;
+}
+
+.password-field input {
+  margin-top: 0;
+}
+
+.profile-panel {
+  max-width: 620px;
+}
+
 .full {
   width: 100%;
 }
@@ -363,6 +378,52 @@ small {
   padding-top: 14px;
 }
 
+.form-block {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.form-block h3 {
+  color: #172033;
+  font-size: 15px;
+  letter-spacing: 0;
+  margin: 0 0 12px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+}
+
+.form-grid label {
+  margin-bottom: 0;
+}
+
+.customer-edit-grid {
+  grid-template-columns: minmax(120px, .7fr) repeat(3, minmax(170px, 1fr));
+}
+
+.consumer-generate-grid {
+  align-items: end;
+  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto;
+}
+
+.wide-field {
+  grid-column: span 2;
+}
+
+.form-actions {
+  align-items: end;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.form-actions button {
+  min-width: 140px;
+}
+
 .payment-summary,
 .pager {
   align-items: center;
@@ -456,6 +517,7 @@ small {
 .modal-backdrop {
   align-items: center;
   background: rgba(0, 0, 0, .45);
+  backdrop-filter: blur(7px);
   display: flex;
   inset: 0;
   justify-content: center;
@@ -495,6 +557,7 @@ small {
 .gateway-head,
 .gateway-summary,
 .payment-methods,
+.dummy-cards,
 .dummy-card,
 .gateway-fields {
   display: grid;
@@ -557,6 +620,9 @@ small {
 .dummy-card {
   align-items: center;
   grid-template-columns: 1fr auto;
+}
+
+.dummy-cards {
   margin-bottom: 12px;
 }
 
@@ -676,5 +742,15 @@ small {
   .gateway-fields,
   .dummy-card {
     grid-template-columns: 1fr;
+  }
+
+  .form-grid,
+  .customer-edit-grid,
+  .consumer-generate-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wide-field {
+    grid-column: auto;
   }
 }
