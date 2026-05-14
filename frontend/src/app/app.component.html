@@ -476,10 +476,10 @@
         </div>
         </div>
         <label>Card Holder
-          <input [ngModel]="gateway.cardName" (ngModelChange)="updatePaymentGateway({ cardName: $event })">
+          <input autocomplete="cc-name" pattern="[A-Za-z ]*" [ngModel]="gateway.cardName" (beforeinput)="allowCardHolderInput($event)" (ngModelChange)="updatePaymentGateway({ cardName: $event })">
         </label>
         <label>Card Number
-          <input inputmode="numeric" placeholder="4242 4242 4242 4242" [ngModel]="gateway.cardNumber" (ngModelChange)="updatePaymentGateway({ cardNumber: $event })">
+          <input inputmode="numeric" autocomplete="cc-number" maxlength="16" pattern="[0-9]*" placeholder="4242424242424242" [ngModel]="gateway.cardNumber" (beforeinput)="allowDigitsInput($event)" (ngModelChange)="updatePaymentGateway({ cardNumber: $event })">
         </label>
         <div class="gateway-fields">
           <label>Expiry

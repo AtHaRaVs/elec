@@ -931,6 +931,14 @@ export class AppComponent {
     target.mobile = this.onlyDigits(target.mobile).slice(0, 10);
   }
 
+  allowCardHolderInput(event: Event): void {
+    this.preventInvalidTextInput(event, /^[A-Za-z ]+$/);
+  }
+
+  allowDigitsInput(event: Event): void {
+    this.preventInvalidTextInput(event, /^\d+$/);
+  }
+
   syncBillConsumerNumber(): void {
     const customer = this.customers.find(item => item.id === Number(this.billForm.customerId));
     if (!customer) {
@@ -1102,6 +1110,16 @@ export class AppComponent {
 
   private onlyDigits(value: string): string {
     return value.replace(/\D/g, '');
+  }
+
+  private preventInvalidTextInput(event: Event, allowed: RegExp): void {
+    const input = event as InputEvent;
+    if (!input.data || input.inputType.startsWith('delete')) {
+      return;
+    }
+    if (!allowed.test(input.data)) {
+      event.preventDefault();
+    }
   }
 
   private formatExpiry(value: string): string {
