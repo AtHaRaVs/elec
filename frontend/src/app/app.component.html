@@ -445,7 +445,7 @@
       <div class="gateway-head">
         <div>
           <p class="eyebrow">Dummy Payment Gateway</p>
-          <h2>Pay {{ selectedBillTotal() || gateway.bills[0].amount | currency:'INR' }}</h2>
+          <h2>Pay {{ gatewayBillTotal(gateway) | currency:'INR' }}</h2>
         </div>
         <button class="secondary icon-button" (click)="closePaymentGateway()">X</button>
       </div>
@@ -469,10 +469,17 @@
         <div class="dummy-cards">
         <div class="dummy-card" *ngFor="let card of dummyCards">
           <div>
-            <span>Demo Card</span>
-            <strong>{{ card.number }}</strong>
+            <span>Demo Card ending {{ dummyCardLast4(card) }}</span>
+            <strong>{{ card.name }}</strong>
+            <small>{{ card.number }}</small>
+            <small *ngIf="visibleDummyCardBalance() === card.number">Balance: {{ card.balance | currency:'INR' }}</small>
           </div>
-          <button class="secondary" (click)="fillDummyCard(card)">Use Card</button>
+          <div class="dummy-card-actions">
+            <button class="secondary" (click)="toggleDummyCardBalance(card)">
+              {{ visibleDummyCardBalance() === card.number ? 'Hide Balance' : 'View Balance' }}
+            </button>
+            <button class="secondary" (click)="fillDummyCard(card)">Use Card</button>
+          </div>
         </div>
         </div>
         <label>Card Holder

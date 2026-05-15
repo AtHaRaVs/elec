@@ -622,6 +622,12 @@ small {
   grid-template-columns: 1fr auto;
 }
 
+.dummy-card-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, max-content);
+}
+
 .dummy-cards {
   margin-bottom: 12px;
 }
@@ -632,6 +638,12 @@ small {
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.dummy-card small {
+  color: #475569;
+  display: block;
+  margin-top: 3px;
 }
 
 .gateway-fields {
@@ -740,7 +752,8 @@ small {
 
   .gateway-summary,
   .gateway-fields,
-  .dummy-card {
+  .dummy-card,
+  .dummy-card-actions {
     grid-template-columns: 1fr;
   }
 

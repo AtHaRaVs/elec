@@ -90,6 +90,14 @@ interface PaymentGateway {
   cvv: string;
 }
 
+interface DummyCard {
+  name: string;
+  number: string;
+  expiry: string;
+  cvv: string;
+  balance: number;
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -110,6 +118,7 @@ export class AppComponent {
   confirmation = signal<Confirmation | null>(null);
   selectedComplaint = signal<Complaint | null>(null);
   paymentGateway = signal<PaymentGateway | null>(null);
+  visibleDummyCardBalance = signal<string | null>(null);
   complaintSource = signal<'ADMIN' | 'SME'>('ADMIN');
   showPassword = signal(false);
   private toastId = 0;
@@ -149,12 +158,12 @@ export class AppComponent {
   statusForm = { complaintId: 0, status: 'IN_PROGRESS', remarks: '' };
   profileForm = { name: '', email: '', address: '', mobile: '', customerType: 'Residential', electricalSection: 'Office' };
 
-  dummyCards = [
-    { name: 'Asha Customer', number: '4242424242424242', expiry: '12/30', cvv: '123' },
-    { name: 'Ravi Customer', number: '5555555555554444', expiry: '11/29', cvv: '234' },
-    { name: 'Meera Shah', number: '4012888888881881', expiry: '10/28', cvv: '345' },
-    { name: 'Kabir Rao', number: '4000056655665556', expiry: '09/27', cvv: '456' },
-    { name: 'Nisha Patel', number: '6011111111111117', expiry: '08/26', cvv: '567' }
+  dummyCards: DummyCard[] = [
+    { name: 'Asha Customer', number: '4242424242424242', expiry: '12/30', cvv: '123', balance: 25000 },
+    { name: 'Ravi Customer', number: '5555555555554444', expiry: '11/29', cvv: '234', balance: 12000 },
+    { name: 'Meera Shah', number: '4012888888881881', expiry: '10/28', cvv: '345', balance: 8500 },
+    { name: 'Kabir Rao', number: '4000056655665556', expiry: '09/27', cvv: '456', balance: 5000 },
+    { name: 'Nisha Patel', number: '6011111111111117', expiry: '08/26', cvv: '567', balance: 3000 }
   ];
 
   roleTabs = computed(() => {
@@ -331,6 +340,10 @@ export class AppComponent {
     return this.selectedBills().reduce((sum, bill) => sum + Number(bill.amount), 0);
   }
 
+  gatewayBillTotal(gateway: PaymentGateway): number {
+    return gateway.bills.reduce((sum, bill) => sum + Number(bill.amount), 0);
+  }
+
   openSelectedBillsPayment(): void {
     const bills = this.selectedBills();
     if (!bills.length) {
@@ -366,6 +379,14 @@ export class AppComponent {
       expiry: card.expiry,
       cvv: card.cvv
     });
+  }
+
+  toggleDummyCardBalance(card: DummyCard): void {
+    this.visibleDummyCardBalance.update(current => current === card.number ? null : card.number);
+  }
+
+  dummyCardLast4(card: DummyCard): string {
+    return card.number.slice(-4);
   }
 
   updatePaymentGateway(patch: Partial<PaymentGateway>): void {
@@ -410,13 +431,18 @@ export class AppComponent {
     if (!cardLast4) {
       return;
     }
-    this.payBillsConfirmed(gateway.bills, gateway.customerId, cardLast4);
+    const paymentCard = gateway.method === 'cash' ? null : this.findDummyCard(gateway) ?? null;
+    this.payBillsConfirmed(gateway.bills, gateway.customerId, cardLast4, paymentCard);
   }
 
-  private payBillsConfirmed(bills: Bill[], customerId: number, cardLast4: string): void {
+  private payBillsConfirmed(bills: Bill[], customerId: number, cardLast4: string, paymentCard: DummyCard | null = null): void {
     this.loading.set(true);
     forkJoin(bills.map(bill => this.http.post<Payment>(`${this.api}/customers/${customerId}/bills/${bill.id}/pay`, { cardLast4 }))).subscribe({
       next: payments => {
+        if (paymentCard) {
+          paymentCard.balance -= this.totalBillAmount(bills);
+          this.visibleDummyCardBalance.set(paymentCard.number);
+        }
         this.paymentGateway.set(null);
         this.selectedBillIds = [];
         this.showToast(`${payments.length} bill${payments.length > 1 ? 's' : ''} paid and receipt generated.`, 'success');
@@ -1112,6 +1138,25 @@ export class AppComponent {
     return value.replace(/\D/g, '');
   }
 
+  private totalBillAmount(bills: Bill[]): number {
+    return bills.reduce((sum, bill) => sum + Number(bill.amount), 0);
+  }
+
+  private findDummyCard(gateway: PaymentGateway): DummyCard | undefined {
+    const digits = this.onlyDigits(gateway.cardNumber);
+    return this.dummyCards.find(card => card.number === digits);
+  }
+
+  private exactDummyCardMatch(gateway: PaymentGateway): DummyCard | undefined {
+    const trimmedName = gateway.cardName.trim().toLowerCase();
+    return this.dummyCards.find(card =>
+      card.number === this.onlyDigits(gateway.cardNumber) &&
+      card.name.toLowerCase() === trimmedName &&
+      card.expiry === gateway.expiry.trim() &&
+      card.cvv === gateway.cvv.trim()
+    );
+  }
+
   private preventInvalidTextInput(event: Event, allowed: RegExp): void {
     const input = event as InputEvent;
     if (!input.data || input.inputType.startsWith('delete')) {
@@ -1152,6 +1197,17 @@ export class AppComponent {
     }
     if (!/^\d{3}$/.test(gateway.cvv.trim())) {
       this.showToast('Enter a valid 3 digit CVV.', 'error');
+      return '';
+    }
+    const card = this.exactDummyCardMatch(gateway);
+    if (!card) {
+      this.showToast('Use one of the demo cards with matching card details.', 'error');
+      return '';
+    }
+    const total = this.gatewayBillTotal(gateway);
+    if (card.balance < total) {
+      this.visibleDummyCardBalance.set(card.number);
+      this.showToast(`Insufficient balance. Available balance is ${this.money(card.balance)}.`, 'error');
       return '';
     }
     return digits.slice(-4);
